@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Verifica se o jq está instalado
+if ! command -v jq &> /dev/null; then
+    echo "jq não está instalado. Por favor, instale-o para continuar."
+    exit 1
+fi
+
+# Verifica se o arquivo JSON foi fornecido como argumento
+if [ -z "$1" ]; then
+    echo "Uso: $0 caminho/para/arquivo.json [saida.txt]"
+    exit 1
+fi
+
+# Define o arquivo de saída
+output_file=${2:-duplicated_blocks.txt}
+
+# Extrai todas as chaves do JSON e conta suas ocorrências
+key_counts=$(jq -r 'paths | map(tostring) | join(".")' "$1" | sort | uniq -c | awk '$1 > 1 {print $2}')
+
+# Verifica se existem chaves duplicadas
+if [ -z "$key_counts" ]; then
+    echo "Nenhuma chave duplicada encontrada."
+    exit 0
+fi
+
+# Função para encontrar e imprimir blocos de objetos JSON com chaves duplicadas
+find_duplicates() {
+    local key=$1
+    jq --arg key "$key" '
+        .. | 
+        (objects | select(has($key))) as $parent |
+        $parent[$key] as $value |
+        $parent | 
+        select( [paths(scalars) | join(".") | select(. == $key)] | length > 1 )
+    ' "$1"
+}
+
+# Limpa o arquivo de saída
+> "$output_file"
+
+# Encontra e salva blocos de objetos com chaves duplicadas
+for key in $key_counts; do
+    find_duplicates "$key" >> "$output_file"
+done
+
+echo "Blocos de objetos JSON com chaves duplicadas foram salvos em $output_file"
